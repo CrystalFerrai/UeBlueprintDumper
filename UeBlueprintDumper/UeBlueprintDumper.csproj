@@ -1,0 +1,39 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Platforms>x64</Platforms>
+	<ProductName>UeBlueprintDumper</ProductName>
+	<Description>UeBlueprintDumper</Description>
+    <Authors>Crystal Ferrai</Authors>
+    <Copyright>Copyright © 2024 Crystal Ferrai</Copyright>
+	<Version>1.0.0.0</Version>
+	<ProductVersion>$(Version)</ProductVersion>
+    <AssemblyVersion>$(Version)</AssemblyVersion>
+    <FileVersion>$(Version)</FileVersion>
+	<InformationalVersion>$(Version)</InformationalVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CUE4Parse\CUE4Parse\CUE4Parse.csproj" />
+  </ItemGroup>
+
+	<ItemGroup>
+		<UpToDateCheckInput Include="$(SolutionDir)lib\oo2core_9_win64.dll" />
+		<UpToDateCheckInput Include="$(SolutionDir)lib\zlib-ng2.dll" />
+	</ItemGroup>
+
+	<Target Name="CopyLibs" AfterTargets="PostBuildEvent">
+		<Copy SourceFiles="$(SolutionDir)lib\oo2core_9_win64.dll" DestinationFolder="$(TargetDir)" />
+		<Copy SourceFiles="$(SolutionDir)lib\zlib-ng2.dll" DestinationFolder="$(TargetDir)" />
+	</Target>
+
+	<Target Name="PublishCopyLibs" AfterTargets="CopyFilesToOutputDirectory">
+		<Copy SourceFiles="$(SolutionDir)lib\oo2core_9_win64.dll" DestinationFolder="$(PublishDir)" />
+		<Copy SourceFiles="$(SolutionDir)lib\zlib-ng2.dll" DestinationFolder="$(PublishDir)" />
+	</Target>
+
+</Project>
