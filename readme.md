@@ -106,7 +106,29 @@ UE5_3
 MarvelRivals
 WildAssault
 UE5_4
+FunkoFusion
+InfinityNikki
+NevernessToEverness_CBT1
+Gothic1Remake
+SplitFiction
+WildAssault
+InZOI
+TempestRising
+MindsEye
+DeadByDaylight
+Grounded2
+MafiaTheOldCountry
+UE5_5
+Brickadia
+Splitgate2
+DeadzoneRogue
+MotoGP25
+Wildgate
+ARKSurvivalAscended
+NevernessToEverness
+FateTrigger
 UE5_LATEST
+UE5_7
 ```
 
 To locate the engine version a game was built with, check the properties of the game's exe file. The version listed will be the Unreal Engine version.

@@ -45,7 +45,7 @@ namespace UeBlueprintDumper
 			string assetName = Path.GetFileNameWithoutExtension(assetPath);
 
 			GameFile file = provider.Files[assetPath];
-			if (!file.IsUE4Package)
+			if (!file.IsUePackage)
 			{
 				return;
 			}
@@ -234,9 +234,9 @@ namespace UeBlueprintDumper
 		{
 			object? value = prop?.GenericValue;
 			string nextIndent = indent + "  ";
-			if (value is UScriptStruct usc)
+			if (value is FScriptStruct ss)
 			{
-				if (usc.StructType is FStructFallback sfb)
+				if (ss.StructType is FStructFallback sfb)
 				{
 					if (sfb.Properties.Count == 0)
 					{
@@ -256,7 +256,7 @@ namespace UeBlueprintDumper
 					builder.Append($"{indent}}}");
 					return builder.ToString();
 				}
-				return $"{indent}{{ {usc.StructType} }}";
+				return $"{indent}{{ {ss.StructType} }}";
 			}
 			else if (value is UScriptArray || value is UScriptSet)
 			{

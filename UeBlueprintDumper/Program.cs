@@ -35,7 +35,7 @@ namespace UeBlueprintDumper
 			mOptions = options;
 			mLogger = logger;
 
-			mProvider = new(options.GameDirectory!, SearchOption.AllDirectories);
+			mProvider = new(new DirectoryInfo(options.GameDirectory!), SearchOption.AllDirectories, null, null);
 		}
 
 		/// <summary>
