@@ -17,6 +17,7 @@ using CUE4Parse.Encryption.Aes;
 using CUE4Parse.FileProvider;
 using CUE4Parse.MappingsProvider;
 using CUE4Parse.UE4.Versions;
+using System.Reflection;
 
 namespace UeBlueprintDumper
 {
@@ -58,8 +59,9 @@ namespace UeBlueprintDumper
 				return OnExit(1);
 			}
 
-			ZlibHelper.Initialize(ZlibHelper.DLL_NAME);
-			OodleHelper.Initialize(OodleHelper.OODLE_DLL_NAME);
+			string assemblyDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
+			ZlibHelper.Initialize(Path.Combine(assemblyDir, ZlibHelper.DLL_NAME));
+			OodleHelper.Initialize(Path.Combine(assemblyDir, OodleHelper.OODLE_DLL_NAME));
 
 			options.PrintConfiguration(logger, LogLevel.Information);
 			logger.LogEmptyLine(LogLevel.Information);
@@ -114,7 +116,9 @@ namespace UeBlueprintDumper
 				mProvider.SubmitKey(vfsReader.EncryptionKeyGuid, encryptionKey);
 			}
 
-			mProvider.LoadLocalization(ELanguage.English);
+			mProvider.PostMount();
+
+			mProvider.ChangeCulture(mProvider.GetLanguageCode(ELanguage.English));
 		}
 
 		/// <summary>
