@@ -1031,7 +1031,7 @@ namespace UeBlueprintDumper
 			{
 				FObjectResource resource;
 				if (packageIndex.Index < 0) resource = package.ImportMap[~packageIndex.Index];
-				else resource = package.ExportMap[packageIndex.Index];
+				else resource = package.ExportMap[packageIndex.Index - 1];
 
 				string path1 = resource.ObjectName.Text;
 				if (resource.OuterIndex is not null)
