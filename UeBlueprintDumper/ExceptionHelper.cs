@@ -27,7 +27,7 @@ namespace UeBlueprintDumper
 		public static void PrintException(Exception ex, Logger logger)
 		{
 			logger.LogError($"[{ex.GetType().FullName}] {ex.Message}");
-			
+
 			for (Exception? inner = ex.InnerException; inner is not null; inner = inner.InnerException)
 			{
 				logger.LogError($"(Caused by) [{ex.GetType().FullName}] {ex.Message}");

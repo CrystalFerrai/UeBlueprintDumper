@@ -49,7 +49,7 @@ namespace UeBlueprintDumper
 			{
 				return;
 			}
-			
+
 			outDir = Path.Combine(outDir, assetName);
 			Directory.CreateDirectory(outDir);
 

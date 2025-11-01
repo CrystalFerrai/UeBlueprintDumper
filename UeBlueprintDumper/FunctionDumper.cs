@@ -96,7 +96,7 @@ namespace UeBlueprintDumper
 				case EExprToken.EX_Cast:
 					{
 						EX_Cast op = (EX_Cast)expression;
-						
+
 						AdvanceByte(ref offset); // conversion type
 
 						// CUE4Parse is not using the proper token name or cast type enum for this
@@ -147,7 +147,7 @@ namespace UeBlueprintDumper
 						EX_SetMap op = (EX_SetMap)expression;
 
 						ProcessExpr(op.MapProperty, ref offset);
-						
+
 						AdvanceInt32(ref offset);
 
 						Log(opOffset, expression.Token, $"Element count: {op.Elements.Length}");
@@ -366,9 +366,9 @@ namespace UeBlueprintDumper
 						EX_Return op = (EX_Return)expression;
 
 						Log(opOffset, expression.Token);
-						
+
 						ProcessExpr(op.ReturnExpression, ref offset);
-						
+
 						break;
 					}
 				case EExprToken.EX_DeprecatedOp4A:
@@ -808,7 +808,7 @@ namespace UeBlueprintDumper
 						AdvanceByte(ref offset); // debug mode
 
 						Log(opOffset, expression.Token, $"Line {op.LineNumber}, in debug mode = {op.DebugMode} with expr:");
-						
+
 						ProcessExpr(op.AssertExpression, ref offset);
 
 						break;

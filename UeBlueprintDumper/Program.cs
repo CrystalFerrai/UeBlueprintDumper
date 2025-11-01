@@ -72,8 +72,8 @@ namespace UeBlueprintDumper
 			{
 #endif
 			using Program program = new(options, logger);
-				program.Initialize();
-				program.Run();
+			program.Initialize();
+			program.Run();
 #if !DEBUG
 		}
 			catch (Exception ex)
