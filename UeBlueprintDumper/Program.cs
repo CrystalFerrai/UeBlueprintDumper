@@ -151,16 +151,21 @@ namespace UeBlueprintDumper
 				}
 				mLogger.Log(LogLevel.Important, $"Dumping all assets with paths containing the text \"{mOptions.AssetMatch}\" to \"{mOptions.OutputDirectory}\"...");
 
+				HashSet<string> paths = new();
 				foreach (string path in mProvider.Files.Keys)
 				{
 					if (path.Contains(mOptions.AssetMatch, StringComparison.OrdinalIgnoreCase))
 					{
 						if (path.EndsWith(".uasset"))
 						{
-							mLogger.Log(LogLevel.Information, path);
-							BlueprintDumper.DumpBlueprintData(path, mProvider, mOptions.OutputDirectory, mLogger);
+							paths.Add(path);
 						}
 					}
+				}
+				foreach (string path in paths)
+				{
+					mLogger.Log(LogLevel.Information, path);
+					BlueprintDumper.DumpBlueprintData(path, mProvider, mOptions.OutputDirectory, mLogger);
 				}
 			}
 
