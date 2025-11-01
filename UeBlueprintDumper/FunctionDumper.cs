@@ -36,6 +36,8 @@ namespace UeBlueprintDumper
 
 		private int mIndentLevel;
 
+		private EX_LocalFinalFunction? mFinalFunction;
+
 		private FunctionDumper(IPackage package, UFunction function)
 		{
 			mPackage = package;
@@ -57,27 +59,53 @@ namespace UeBlueprintDumper
 		/// Process a fucntion and return human readable disassembly
 		/// </summary>
 		/// <param name="package">The package that owns the function</param>
-		/// <param name="function">The fucntion to process</param>
+		/// <param name="function">The function to process</param>
+		/// <param name="finalFunction">If this is an event function that is implemented elsewhere, will contain the location of the implementation</param>
 		/// <exception cref="ArgumentNullException">A parameter is null</exception>
 		/// <exception cref="ArgumentException">Function's script bytecode is not loaded</exception>
-		public static string Process(IPackage package, UFunction function)
+		public static string Process(IPackage package, UFunction function, out LocalFinalFunctionData? finalFunction)
 		{
 			if (package == null) throw new ArgumentNullException(nameof(package));
 			if (function == null) throw new ArgumentNullException(nameof(function));
 			if (function.ScriptBytecode == null) throw new ArgumentException($"Function script is not loaded. Set {nameof(IFileProvider.ReadScriptData)}=true on the {nameof(IFileProvider)} used to load the function.", nameof(function));
 
 			using FunctionDumper instance = new(package, function);
-			string assembly = instance.Process(function.ScriptBytecode);
+			string assembly = instance.Process(function.ScriptBytecode, null);
+
+			finalFunction = instance.mFinalFunction is not null ? new() { Name = function.Name, Location = instance.mFinalFunction } : null;
+			return assembly;
+		}
+
+		/// <summary>
+		/// Process a fucntion and return human readable disassembly
+		/// </summary>
+		/// <param name="package">The package that owns the function</param>
+		/// <param name="function">The function to process</param>
+		/// <param name="finalFunctions">Event functions implemented by this graph</param>
+		/// <exception cref="ArgumentNullException">A parameter is null</exception>
+		/// <exception cref="ArgumentException">Function's script bytecode is not loaded</exception>
+		public static string ProcessGraph(IPackage package, UFunction function, IReadOnlyList<LocalFinalFunctionData>? finalFunctions)
+		{
+			if (package == null) throw new ArgumentNullException(nameof(package));
+			if (function == null) throw new ArgumentNullException(nameof(function));
+			if (function.ScriptBytecode == null) throw new ArgumentException($"Function script is not loaded. Set {nameof(IFileProvider.ReadScriptData)}=true on the {nameof(IFileProvider)} used to load the function.", nameof(function));
+
+			Dictionary<int, LocalFinalFunctionData>? finalFunctionMap = finalFunctions?.ToDictionary(f => ((EX_IntConst)f.Location.Parameters[0]).Value, f => f);
+
+			using FunctionDumper instance = new(package, function);
+			string assembly = instance.Process(function.ScriptBytecode, finalFunctionMap);
 
 			return assembly;
 		}
 
-		private string Process(IList<KismetExpression> expressions)
+		private string Process(IList<KismetExpression> expressions, IReadOnlyDictionary<int, LocalFinalFunctionData>? finalFunctionMap)
 		{
+			if (finalFunctionMap is null) finalFunctionMap = new Dictionary<int, LocalFinalFunctionData>();
+
 			int offset = 0;
 			foreach (KismetExpression expression in expressions)
 			{
-				ProcessExpr(expression, ref offset);
+				ProcessExpr(expression, finalFunctionMap, ref offset);
 			}
 			return mWriter.ToString();
 		}
@@ -85,11 +113,16 @@ namespace UeBlueprintDumper
 		// Based on ProcessCommon from ScriptDisassembler.cpp. Adapted to read CUE4Parse script data.
 		// Offset calculation is based on deserialized data. Sizes referenced from ScriptSerialization.h
 		// which is inlined into UStruct::Serialize in Class.cpp.
-		private EExprToken ProcessExpr(KismetExpression expression, ref int offset)
+		private EExprToken ProcessExpr(KismetExpression expression, IReadOnlyDictionary<int, LocalFinalFunctionData> finalFunctionMap, ref int offset)
 		{
 			int opOffset = offset;
 			AdvanceByte(ref offset);
 			++mIndentLevel;
+
+			if (finalFunctionMap.TryGetValue(opOffset, out LocalFinalFunctionData finalFunctionData))
+			{
+				Log($"Event: {finalFunctionData.Name}");
+			}
 
 			switch (expression.Token)
 			{
@@ -104,7 +137,7 @@ namespace UeBlueprintDumper
 						Log(opOffset, expression.Token, "PrimitiveCast", $"Type {castType}");
 
 						Log("Argument:");
-						ProcessExpr(op.Target, ref offset);
+						ProcessExpr(op.Target, finalFunctionMap, ref offset);
 
 						break;
 					}
@@ -114,12 +147,12 @@ namespace UeBlueprintDumper
 
 						Log(opOffset, expression.Token);
 
-						ProcessExpr(op.SetProperty, ref offset);
+						ProcessExpr(op.SetProperty, finalFunctionMap, ref offset);
 						AdvanceInt32(ref offset);
 
 						foreach (KismetExpression element in op.Elements)
 						{
-							ProcessExpr(element, ref offset);
+							ProcessExpr(element, finalFunctionMap, ref offset);
 						}
 						AdvanceByte(ref offset); // EndSet
 
@@ -136,7 +169,7 @@ namespace UeBlueprintDumper
 
 						foreach (KismetExpression element in op.Elements)
 						{
-							ProcessExpr(element, ref offset);
+							ProcessExpr(element, finalFunctionMap, ref offset);
 						}
 						AdvanceByte(ref offset); // EndSetConst
 
@@ -146,7 +179,7 @@ namespace UeBlueprintDumper
 					{
 						EX_SetMap op = (EX_SetMap)expression;
 
-						ProcessExpr(op.MapProperty, ref offset);
+						ProcessExpr(op.MapProperty, finalFunctionMap, ref offset);
 
 						AdvanceInt32(ref offset);
 
@@ -154,7 +187,7 @@ namespace UeBlueprintDumper
 
 						foreach (KismetExpression element in op.Elements)
 						{
-							ProcessExpr(element, ref offset);
+							ProcessExpr(element, finalFunctionMap, ref offset);
 						}
 						AdvanceByte(ref offset); // EndMap
 
@@ -172,7 +205,7 @@ namespace UeBlueprintDumper
 
 						foreach (KismetExpression element in op.Elements)
 						{
-							ProcessExpr(element, ref offset);
+							ProcessExpr(element, finalFunctionMap, ref offset);
 						}
 						AdvanceByte(ref offset); // EndMapConst
 
@@ -188,7 +221,7 @@ namespace UeBlueprintDumper
 
 						Log(opOffset, expression.Token, $"Cast to {op.ClassPtr.Name}");
 
-						ProcessExpr(op.Target, ref offset);
+						ProcessExpr(op.Target, finalFunctionMap, ref offset);
 
 						break;
 					}
@@ -203,10 +236,10 @@ namespace UeBlueprintDumper
 						++mIndentLevel;
 
 						Log("Variable:");
-						ProcessExpr(op.Variable, ref offset);
+						ProcessExpr(op.Variable, finalFunctionMap, ref offset);
 
 						Log("Expression:");
-						ProcessExpr(op.Assignment, ref offset);
+						ProcessExpr(op.Assignment, finalFunctionMap, ref offset);
 
 						--mIndentLevel;
 
@@ -226,11 +259,11 @@ namespace UeBlueprintDumper
 
 						// Variable expr.
 						Log("Variable:");
-						ProcessExpr(op.Variable, ref offset);
+						ProcessExpr(op.Variable, finalFunctionMap, ref offset);
 
 						// Assignment expr.
 						Log("Expression:");
-						ProcessExpr(op.Assignment, ref offset);
+						ProcessExpr(op.Assignment, finalFunctionMap, ref offset);
 
 						--mIndentLevel;
 
@@ -248,7 +281,7 @@ namespace UeBlueprintDumper
 						Log($"Destination variable: {GetPath(op.DestinationProperty)}");
 
 						Log("Expression:");
-						ProcessExpr(op.AssignmentExpression, ref offset);
+						ProcessExpr(op.AssignmentExpression, finalFunctionMap, ref offset);
 
 						--mIndentLevel;
 
@@ -266,7 +299,7 @@ namespace UeBlueprintDumper
 						Log($"Member name: {GetPath(op.Property)}");
 
 						Log("Expression to struct:");
-						ProcessExpr(op.StructExpression, ref offset);
+						ProcessExpr(op.StructExpression, finalFunctionMap, ref offset);
 
 						--mIndentLevel;
 
@@ -282,7 +315,7 @@ namespace UeBlueprintDumper
 
 						foreach (KismetExpression param in op.Parameters)
 						{
-							ProcessExpr(param, ref offset);
+							ProcessExpr(param, finalFunctionMap, ref offset);
 						}
 						AdvanceByte(ref offset); // EndFunctionParms
 
@@ -300,9 +333,18 @@ namespace UeBlueprintDumper
 
 						foreach (KismetExpression param in op.Parameters)
 						{
-							ProcessExpr(param, ref offset);
+							ProcessExpr(param, finalFunctionMap, ref offset);
 						}
 						AdvanceByte(ref offset); // EndFunctionParms
+
+						if (mFunction.FunctionFlags.HasFlag(EFunctionFlags.FUNC_Event) &&
+							op is EX_LocalFinalFunction finalFunction &&
+							finalFunction.Parameters.Length == 1 &&
+							finalFunction.Parameters[0] is EX_IntConst)
+						{
+							// Function is implemented in an event graph
+							mFinalFunction = finalFunction;
+						}
 
 						break;
 					}
@@ -314,7 +356,7 @@ namespace UeBlueprintDumper
 
 						++mIndentLevel;
 
-						ProcessExpr(op.CodeOffsetExpression, ref offset);
+						ProcessExpr(op.CodeOffsetExpression, finalFunctionMap, ref offset);
 
 						--mIndentLevel;
 
@@ -358,7 +400,7 @@ namespace UeBlueprintDumper
 
 						Log(opOffset, expression.Token);
 
-						ProcessExpr(op.InterfaceValue, ref offset);
+						ProcessExpr(op.InterfaceValue, finalFunctionMap, ref offset);
 					}
 					break;
 				case EExprToken.EX_Return:
@@ -367,7 +409,7 @@ namespace UeBlueprintDumper
 
 						Log(opOffset, expression.Token);
 
-						ProcessExpr(op.ReturnExpression, ref offset);
+						ProcessExpr(op.ReturnExpression, finalFunctionMap, ref offset);
 
 						break;
 					}
@@ -410,14 +452,14 @@ namespace UeBlueprintDumper
 						AdvanceObject(ref offset);
 						Log(opOffset, expression.Token, GetPath(op.StackNode));
 
-						ProcessExpr(op.Delegate, ref offset);
+						ProcessExpr(op.Delegate, finalFunctionMap, ref offset);
 
 						++mIndentLevel;
 
 						Log("Params:");
 						foreach (KismetExpression param in op.Parameters)
 						{
-							ProcessExpr(param, ref offset);
+							ProcessExpr(param, finalFunctionMap, ref offset);
 						}
 						AdvanceByte(ref offset); // EndFunctionParms
 
@@ -436,7 +478,7 @@ namespace UeBlueprintDumper
 						++mIndentLevel;
 
 						Log("ObjectExpression:");
-						ProcessExpr(op.ObjectExpression, ref offset);
+						ProcessExpr(op.ObjectExpression, finalFunctionMap, ref offset);
 
 						bool canFailSilently = expression.Token == EExprToken.EX_Context_FailSilent;
 						if (canFailSilently)
@@ -452,7 +494,7 @@ namespace UeBlueprintDumper
 						Log($"R-Value Property: {GetPath(op.RValuePointer)}");
 
 						Log("ContextExpression:");
-						ProcessExpr(op.ContextExpression, ref offset);
+						ProcessExpr(op.ContextExpression, finalFunctionMap, ref offset);
 
 						--mIndentLevel;
 
@@ -553,17 +595,17 @@ namespace UeBlueprintDumper
 
 									Log("namespace: ");
 									++mIndentLevel;
-									ProcessExpr(text.Namespace!, ref offset);
+									ProcessExpr(text.Namespace!, finalFunctionMap, ref offset);
 									--mIndentLevel;
 
 									Log("key: ");
 									++mIndentLevel;
-									ProcessExpr(text.KeyString!, ref offset);
+									ProcessExpr(text.KeyString!, finalFunctionMap, ref offset);
 									--mIndentLevel;
 
 									Log("source: ");
 									++mIndentLevel;
-									ProcessExpr(text.SourceString!, ref offset);
+									ProcessExpr(text.SourceString!, finalFunctionMap, ref offset);
 									--mIndentLevel;
 
 									--mIndentLevel;
@@ -576,7 +618,7 @@ namespace UeBlueprintDumper
 									Log(opOffset, expression.Token, "Invariant {");
 
 									++mIndentLevel;
-									ProcessExpr(text.SourceString!, ref offset);
+									ProcessExpr(text.SourceString!, finalFunctionMap, ref offset);
 									--mIndentLevel;
 
 									Log("}");
@@ -588,7 +630,7 @@ namespace UeBlueprintDumper
 									Log(opOffset, expression.Token, "Literal {");
 
 									++mIndentLevel;
-									ProcessExpr(text.SourceString!, ref offset);
+									ProcessExpr(text.SourceString!, finalFunctionMap, ref offset);
 									--mIndentLevel;
 
 									Log("}");
@@ -604,12 +646,12 @@ namespace UeBlueprintDumper
 
 									Log("tableid: ");
 									++mIndentLevel;
-									ProcessExpr(text.TableIdString!, ref offset);
+									ProcessExpr(text.TableIdString!, finalFunctionMap, ref offset);
 									--mIndentLevel;
 
 									Log("key: ");
 									++mIndentLevel;
-									ProcessExpr(text.KeyString!, ref offset);
+									ProcessExpr(text.KeyString!, finalFunctionMap, ref offset);
 									--mIndentLevel;
 
 									--mIndentLevel;
@@ -647,7 +689,7 @@ namespace UeBlueprintDumper
 						KismetExpression<KismetExpression> op = (KismetExpression<KismetExpression>)expression;
 
 						Log(opOffset, expression.Token);
-						ProcessExpr(op.Value, ref offset);
+						ProcessExpr(op.Value, finalFunctionMap, ref offset);
 
 						break;
 					}
@@ -718,7 +760,7 @@ namespace UeBlueprintDumper
 
 						foreach (KismetExpression property in op.Properties)
 						{
-							ProcessExpr(property, ref offset);
+							ProcessExpr(property, finalFunctionMap, ref offset);
 						}
 						AdvanceByte(ref offset); // EndStructConst
 
@@ -732,7 +774,7 @@ namespace UeBlueprintDumper
 
 						if (mPackage.Summary.FileVersionUE >= EUnrealEngineObjectUE4Version.CHANGE_SETARRAY_BYTECODE)
 						{
-							ProcessExpr(op.AssigningProperty!, ref offset);
+							ProcessExpr(op.AssigningProperty!, finalFunctionMap, ref offset);
 						}
 						else
 						{
@@ -741,7 +783,7 @@ namespace UeBlueprintDumper
 
 						foreach (KismetExpression element in op.Elements)
 						{
-							ProcessExpr(element, ref offset);
+							ProcessExpr(element, finalFunctionMap, ref offset);
 						}
 						AdvanceByte(ref offset); // EndArray
 
@@ -758,7 +800,7 @@ namespace UeBlueprintDumper
 
 						foreach (KismetExpression element in op.Elements)
 						{
-							ProcessExpr(element, ref offset);
+							ProcessExpr(element, finalFunctionMap, ref offset);
 						}
 						AdvanceByte(ref offset); // EndArrayConst
 
@@ -782,7 +824,7 @@ namespace UeBlueprintDumper
 						AdvanceObject(ref offset);
 						Log(opOffset, expression.Token, $"Cast to {op.ClassPtr.Name} of expr:");
 
-						ProcessExpr(op.Target, ref offset);
+						ProcessExpr(op.Target, finalFunctionMap, ref offset);
 
 						break;
 					}
@@ -796,7 +838,7 @@ namespace UeBlueprintDumper
 						Log(opOffset, expression.Token, $"Offset: 0x{op.CodeOffset:X}, Condition:");
 
 						// Boolean expr.
-						ProcessExpr(op.BooleanExpression, ref offset);
+						ProcessExpr(op.BooleanExpression, finalFunctionMap, ref offset);
 
 						break;
 					}
@@ -809,7 +851,7 @@ namespace UeBlueprintDumper
 
 						Log(opOffset, expression.Token, $"Line {op.LineNumber}, in debug mode = {op.DebugMode} with expr:");
 
-						ProcessExpr(op.AssertExpression, ref offset);
+						ProcessExpr(op.AssertExpression, finalFunctionMap, ref offset);
 
 						break;
 					}
@@ -820,7 +862,7 @@ namespace UeBlueprintDumper
 						AdvanceInt32(ref offset);
 						Log(opOffset, expression.Token, $"Possibly skip {op.CodeOffset} bytes of expr:");
 
-						ProcessExpr(op.SkipExpression, ref offset);
+						ProcessExpr(op.SkipExpression, finalFunctionMap, ref offset);
 
 						break;
 					}
@@ -840,8 +882,8 @@ namespace UeBlueprintDumper
 
 						Log(opOffset, expression.Token);
 
-						ProcessExpr(op.Delegate, ref offset);
-						ProcessExpr(op.DelegateToAdd, ref offset);
+						ProcessExpr(op.Delegate, finalFunctionMap, ref offset);
+						ProcessExpr(op.DelegateToAdd, finalFunctionMap, ref offset);
 
 						break;
 					}
@@ -851,8 +893,8 @@ namespace UeBlueprintDumper
 
 						Log(opOffset, expression.Token);
 
-						ProcessExpr(op.Delegate, ref offset);
-						ProcessExpr(op.DelegateToAdd, ref offset);
+						ProcessExpr(op.Delegate, finalFunctionMap, ref offset);
+						ProcessExpr(op.DelegateToAdd, finalFunctionMap, ref offset);
 
 						break;
 					}
@@ -862,7 +904,7 @@ namespace UeBlueprintDumper
 
 						Log(opOffset, expression.Token);
 
-						ProcessExpr(op.DelegateToClear, ref offset);
+						ProcessExpr(op.DelegateToClear, finalFunctionMap, ref offset);
 
 						break;
 					}
@@ -877,10 +919,10 @@ namespace UeBlueprintDumper
 						++mIndentLevel;
 
 						Log("Delegate:");
-						ProcessExpr(op.Delegate, ref offset);
+						ProcessExpr(op.Delegate, finalFunctionMap, ref offset);
 
 						Log("Object:");
-						ProcessExpr(op.ObjectTerm, ref offset);
+						ProcessExpr(op.ObjectTerm, finalFunctionMap, ref offset);
 
 						--mIndentLevel;
 
@@ -913,7 +955,7 @@ namespace UeBlueprintDumper
 
 						Log(opOffset, expression.Token, "Jump to statement at FlowStack.Pop(). Condition:");
 
-						ProcessExpr(op.BooleanExpression, ref offset);
+						ProcessExpr(op.BooleanExpression, finalFunctionMap, ref offset);
 
 						break;
 					}
@@ -951,12 +993,12 @@ namespace UeBlueprintDumper
 						++mIndentLevel;
 
 						Log("Index:");
-						ProcessExpr(op.IndexTerm, ref offset);
+						ProcessExpr(op.IndexTerm, finalFunctionMap, ref offset);
 
 						for (ushort caseIndex = 0; caseIndex < op.Cases.Length; ++caseIndex)
 						{
 							Log($"Case {caseIndex}:");
-							ProcessExpr(op.Cases[caseIndex].CaseIndexValueTerm, ref offset);
+							ProcessExpr(op.Cases[caseIndex].CaseIndexValueTerm, finalFunctionMap, ref offset);
 
 							++mIndentLevel;
 
@@ -964,13 +1006,13 @@ namespace UeBlueprintDumper
 							Log($"Offset of next case: 0x{op.Cases[caseIndex].NextOffset}");
 
 							Log("Case Term:");
-							ProcessExpr(op.Cases[caseIndex].CaseTerm, ref offset); // case term
+							ProcessExpr(op.Cases[caseIndex].CaseTerm, finalFunctionMap, ref offset); // case term
 
 							--mIndentLevel;
 						}
 
 						Log($"Default term:");
-						ProcessExpr(op.DefaultTerm, ref offset);
+						ProcessExpr(op.DefaultTerm, finalFunctionMap, ref offset);
 
 						--mIndentLevel;
 
@@ -984,8 +1026,8 @@ namespace UeBlueprintDumper
 
 						++mIndentLevel;
 
-						ProcessExpr(op.ArrayVariable, ref offset);
-						ProcessExpr(op.ArrayIndex, ref offset);
+						ProcessExpr(op.ArrayVariable, finalFunctionMap, ref offset);
+						ProcessExpr(op.ArrayIndex, finalFunctionMap, ref offset);
 
 						--mIndentLevel;
 
@@ -1128,6 +1170,12 @@ namespace UeBlueprintDumper
 			int index = raw.IndexOf('_') + 1;
 			return raw[index..];
 		}
+	}
+
+	internal struct LocalFinalFunctionData
+	{
+		public string Name;
+		public EX_LocalFinalFunction Location;
 	}
 
 	// From Script.h

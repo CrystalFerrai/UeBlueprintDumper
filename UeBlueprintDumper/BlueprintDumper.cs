@@ -18,9 +18,11 @@ using CUE4Parse.UE4.Assets;
 using CUE4Parse.UE4.Assets.Exports;
 using CUE4Parse.UE4.Assets.Objects;
 using CUE4Parse.UE4.Assets.Objects.Properties;
+using CUE4Parse.UE4.Kismet;
 using CUE4Parse.UE4.Objects.Engine;
 using CUE4Parse.UE4.Objects.UObject;
 using System.Text;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace UeBlueprintDumper
 {
@@ -58,14 +60,34 @@ namespace UeBlueprintDumper
 			AbstractUePackage package = (AbstractUePackage)provider.LoadPackage(file);
 			package.Summary.FileVersionUE = provider.Versions.Ver;
 
-			foreach (Lazy<UObject> export in package.ExportsLazy)
+			List<(int, UFunction)> graphFunctions = new();
+			Dictionary<int, List<LocalFinalFunctionData>> finalFunctions = new();
+			for (int i = 0; i < package.ExportsLazy.Length; ++i)
 			{
-				UObject exportObject = export.Value;
+				UObject exportObject = package.ExportsLazy[i].Value;
 				try
 				{
 					if (exportObject is UFunction function)
 					{
-						DumpBlueprintFunction(function, assetName, package, outDir, logger);
+						if (function.FunctionFlags.HasFlag(EFunctionFlags.FUNC_UbergraphFunction))
+						{
+							graphFunctions.Add((i + 1, function));
+						}
+						else
+						{
+							LocalFinalFunctionData? finalFunction;
+							DumpBlueprintFunction(i + 1, function, assetName, package, null, outDir, logger, out finalFunction);
+							if (finalFunction.HasValue)
+							{
+								List<LocalFinalFunctionData>? functionsForGraph;
+								if (!finalFunctions.TryGetValue(finalFunction.Value.Location.StackNode.Index, out functionsForGraph))
+								{
+									functionsForGraph = new();
+									finalFunctions.Add(finalFunction.Value.Location.StackNode.Index, functionsForGraph);
+								}
+								functionsForGraph.Add(finalFunction.Value);
+							}
+						}
 					}
 					else if (exportObject is UBlueprintGeneratedClass genClass)
 					{
@@ -75,6 +97,18 @@ namespace UeBlueprintDumper
 				catch (Exception ex)
 				{
 					logger.LogError($"Error processing export \"{exportObject.Name}\" from asset \"{package.Name}\". Output may be missing or incomplete.\n[{ex.GetType().FullName}] {ex.Message}");
+				}
+			}
+
+			foreach((int, UFunction) graphFunction in graphFunctions)
+			{
+				try
+				{
+					DumpBlueprintFunction(graphFunction.Item1, graphFunction.Item2, assetName, package, finalFunctions, outDir, logger, out _);
+				}
+				catch (Exception ex)
+				{
+					logger.LogError($"Error processing export \"{graphFunction.Item2.Name}\" from asset \"{package.Name}\". Output may be missing or incomplete.\n[{ex.GetType().FullName}] {ex.Message}");
 				}
 			}
 
@@ -131,7 +165,7 @@ namespace UeBlueprintDumper
 			}
 		}
 
-		private static void DumpBlueprintFunction(UFunction function, string assetName, IPackage package, string outDir, Logger logger)
+		private static void DumpBlueprintFunction(int packageIndex, UFunction function, string assetName, IPackage package, IReadOnlyDictionary<int, List<LocalFinalFunctionData>>? finalFunctions, string outDir, Logger logger, out LocalFinalFunctionData? outFinalFunction)
 		{
 			List<FFieldInfo> inParams = new();
 			List<FFieldInfo> outParams = new();
@@ -154,19 +188,36 @@ namespace UeBlueprintDumper
 				}
 			}
 
-			string assembly = FunctionDumper.Process(package, function);
+			string assembly;
 
 			string funcName = function.Name;
 			string funcType = "Function";
-			if ((function.FunctionFlags & EFunctionFlags.FUNC_Delegate) != EFunctionFlags.FUNC_None)
+			if (function.FunctionFlags.HasFlag(EFunctionFlags.FUNC_Delegate))
 			{
 				funcName = funcName[0..funcName.LastIndexOf("__")];
 				funcType = "Delegate";
 			}
-			if ((function.FunctionFlags & EFunctionFlags.FUNC_UbergraphFunction) != EFunctionFlags.FUNC_None)
+			else if (function.FunctionFlags.HasFlag(EFunctionFlags.FUNC_Event))
+			{
+				funcType = "Event";
+			}
+
+			if (function.FunctionFlags.HasFlag(EFunctionFlags.FUNC_UbergraphFunction))
 			{
 				funcName = funcName.Replace($"_{assetName}", string.Empty);
 				funcType = "Graph";
+
+				List<LocalFinalFunctionData>? functionsForGraph;
+				if (finalFunctions is null || !finalFunctions.TryGetValue(packageIndex, out functionsForGraph))
+				{
+					functionsForGraph = null;
+				}
+				assembly = FunctionDumper.ProcessGraph(package, function, functionsForGraph);
+				outFinalFunction = null;
+			}
+			else
+			{
+				assembly = FunctionDumper.Process(package, function, out outFinalFunction);
 			}
 
 			// Replace invalid file name characters
