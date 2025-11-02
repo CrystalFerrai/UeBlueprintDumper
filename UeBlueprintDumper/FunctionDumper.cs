@@ -337,12 +337,11 @@ namespace UeBlueprintDumper
 						}
 						AdvanceByte(ref offset); // EndFunctionParms
 
-						if (mFunction.FunctionFlags.HasFlag(EFunctionFlags.FUNC_Event) &&
-							op is EX_LocalFinalFunction finalFunction &&
+						if (op is EX_LocalFinalFunction finalFunction &&
 							finalFunction.Parameters.Length == 1 &&
 							finalFunction.Parameters[0] is EX_IntConst)
 						{
-							// Function is implemented in an event graph
+							// Function calls into an event graph
 							mFinalFunction = finalFunction;
 						}
 
