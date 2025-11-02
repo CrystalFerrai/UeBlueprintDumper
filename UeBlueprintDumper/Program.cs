@@ -118,7 +118,14 @@ namespace UeBlueprintDumper
 
 			mProvider.PostMount();
 
-			mProvider.ChangeCulture(mProvider.GetLanguageCode(ELanguage.English));
+			try
+			{
+				mProvider.ChangeCulture(mProvider.GetLanguageCode(ELanguage.English));
+			}
+			catch
+			{
+				mLogger.Log(LogLevel.Warning, "Unable to set language to English. Text data will not be localized.");
+			}
 		}
 
 		/// <summary>
