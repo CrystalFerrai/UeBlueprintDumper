@@ -199,7 +199,7 @@ namespace UeBlueprintDumper
 			}
 			else if (function.FunctionFlags.HasFlag(EFunctionFlags.FUNC_Event))
 			{
-				funcType = "Event";
+				funcType = "NativeEvent";
 			}
 
 			if (function.FunctionFlags.HasFlag(EFunctionFlags.FUNC_UbergraphFunction))
@@ -218,6 +218,10 @@ namespace UeBlueprintDumper
 			else
 			{
 				assembly = FunctionDumper.Process(package, function, out outFinalFunction);
+				if (outFinalFunction is not null && !function.FunctionFlags.HasFlag(EFunctionFlags.FUNC_Event))
+				{
+					funcType = "CustomEvent";
+				}
 			}
 
 			// Replace invalid file name characters
