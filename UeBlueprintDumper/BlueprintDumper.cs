@@ -272,7 +272,12 @@ namespace UeBlueprintDumper
 			writer.WriteLine($"Type: {field.Type}");
 			if (field.DefaultValue is not null)
 			{
-				writer.WriteLine($"Default: {field.DefaultValue}");
+				string value = field.DefaultValue;
+				if (value.StartsWith("CUE4Parse"))
+				{
+					value = value.Substring(value.LastIndexOf('.') + 1);
+				}
+				writer.WriteLine($"Default: {value}");
 			}
 			if (field.PropertyFlags != EPropertyFlags.None)
 			{
